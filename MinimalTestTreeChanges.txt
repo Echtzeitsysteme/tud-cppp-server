@@ -1,0 +1,28 @@
+
+// remove 2 from 1
+
+{
+  "nodeinfo" : {
+    "id" : "01",
+    "ap_mac" : "01",
+    "sta_mac" : "01",
+    "uplink_bssid" : "00",
+    "rssi" : "00",    
+    "no_stas" : "2"
+  },
+  "stas" : [ {"mac" : "03"}, {"mac" : "04"} ]
+}
+
+//attach 2 to 4
+
+{
+  "nodeinfo" : {
+    "id" : "02",
+    "ap_mac" : "02",
+    "sta_mac" : "02",
+    "uplink_bssid" : "04",
+    "rssi" : "00",    
+    "no_stas" : "2"
+  },
+  "stas" : [ {"mac" : "05"}, {"mac" : "06"}]
+}

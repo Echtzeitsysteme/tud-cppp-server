@@ -1,0 +1,27 @@
+graph {
+	padding:100px;
+}
+node {
+	size: 80px, 20px;
+	shape: box;
+	fill-color: green;
+	stroke-mode: plain;
+	stroke-color: black;
+	/*size-mode:fit;*/
+	text-padding: 10px;
+	padding: 10px;
+	text-style: bold;
+
+}
+edge{
+    text-offset : 30,0;
+}
+node:clicked {
+	fill-color: red;
+}
+node:selected {
+	fill-color: yellow;
+}
+sprite{
+    fill-mode : none;
+}

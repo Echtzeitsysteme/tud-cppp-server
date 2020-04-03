@@ -1,0 +1,103 @@
+{
+  "nodeinfo" : {
+    "id" : "01",
+    "ap_mac" : "01",
+    "sta_mac" : "01",
+    "uplink_bssid" : "00",
+    "rssi" : "00",    
+    "no_stas" : "3"
+  },
+  "stas" : [ {"mac" : "02"}, {"mac" : "03"}, {"mac" : "04"} ]
+}
+
+{
+  "nodeinfo" : {
+    "id" : "02",
+    "ap_mac" : "02",
+    "sta_mac" : "02",
+    "uplink_bssid" : "01",
+    "rssi" : "00",    
+    "no_stas" : "2"
+  },
+  "stas" : [ {"mac" : "05"}, {"mac" : "06"}]
+}
+{
+  "nodeinfo" : {
+    "id" : "05",
+    "ap_mac" : "05",
+    "sta_mac" : "05",
+    "uplink_bssid" : "02",
+    "rssi" : "00",    
+    "no_stas" : "1"
+  },
+  "stas" : [{"mac" : "08"}]
+}
+{
+  "nodeinfo" : {
+    "id" : "08",
+    "ap_mac" : "08",
+    "sta_mac" : "08",
+    "uplink_bssid" : "05",
+    "rssi" : "00",    
+    "no_stas" : "1"
+  },
+  "stas" : [{"mac" : "09"}]
+}
+{
+  "nodeinfo" : {
+    "id" : "09",
+    "ap_mac" : "09",
+    "sta_mac" : "09",
+    "uplink_bssid" : "08",
+    "rssi" : "00",    
+    "no_stas" : "0"
+  },
+  "stas" : []
+}
+
+{
+  "nodeinfo" : {
+    "id" : "06",
+    "ap_mac" : "06",
+    "sta_mac" : "06",
+    "uplink_bssid" : "02",
+    "rssi" : "00",    
+    "no_stas" : "0"
+  },
+  "stas" : []
+}
+
+{
+  "nodeinfo" : {
+    "id" : "03",
+    "ap_mac" : "03",
+    "sta_mac" : "03",
+    "uplink_bssid" : "01",
+    "rssi" : "00",    
+    "no_stas" : "0"
+  },
+  "stas" : []
+}
+{
+  "nodeinfo" : {
+    "id" : "04",
+    "ap_mac" : "04",
+    "sta_mac" : "04",
+    "uplink_bssid" : "01",
+    "rssi" : "00",    
+    "no_stas" : "1"
+  },
+  "stas" : [{"mac" : "07"}]
+}
+{
+  "nodeinfo" : {
+    "id" : "07",
+    "ap_mac" : "07",
+    "sta_mac" : "07",
+    "uplink_bssid" : "04",
+    "rssi" : "00",    
+    "no_stas" : "0"
+  },
+  "stas" : []
+}
+
