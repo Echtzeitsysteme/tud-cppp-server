@@ -5,11 +5,13 @@ import org.abego.treelayout.util.DefaultConfiguration;
 import org.abego.treelayout.util.FixedNodeExtentProvider;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.graphstream.graph.Edge;
-import org.graphstream.graph.Element;
 import org.graphstream.graph.Graph;
 import org.graphstream.graph.Node;
 import org.graphstream.graph.implementations.SingleGraph;
+import org.graphstream.ui.graphicGraph.GraphicGraph;
+import org.graphstream.ui.spriteManager.Sprite;
 import org.graphstream.ui.spriteManager.SpriteManager;
 import org.graphstream.ui.view.Viewer;
 import org.graphstream.ui.view.ViewerPipe;
@@ -22,29 +24,38 @@ import java.util.function.Function;
 
 public class Handler {
 
-    // TODO: Maybe get MAC from Wireless Interface's default gateway
+    // Either Hardcode Router-Mac or Identify Router by MAC-Prefix
+    private static final boolean HARDCODE_ROUTER_MAC = false;
     private static final String ROUTER_MAC = "00";
 
+    private static final String MAC_PREFIX = "24:24";
+    private static Handler instance;
     private HashMap<String, NetworkNode> nodesById = new HashMap<>();
     private HashMap<String, NetworkNode> unknownApMacs = new HashMap<>();
     private HashMap<String, NetworkNode> unknownStaMacs = new HashMap<>();
-    private HashSet<NetworkNode> allNodes = new HashSet<>();
     private Logger logger = LogManager.getLogger(Handler.class.getSimpleName());
-
     private MainFrame mainFrame = MainFrame.getInstance();
     private NodesTableFrame nodesTableFrame = NodesTableFrame.getInstance();
-
-
     private NetworkNode networkRoot = null;
-
-
     private Graph graph = new SingleGraph("NetworkGraph");
+
+    private DefaultConfiguration<NetworkNode> config = new DefaultConfiguration<>(1, 1);
+    private FixedNodeExtentProvider<NetworkNode> extentProvider = new FixedNodeExtentProvider<>(1, 1);
+    private boolean routerIsFound = false;
     private SpriteManager spriteManager = new SpriteManager(graph);
 
-    private DefaultConfiguration<NetworkNode> config = new DefaultConfiguration<>(40, 40);
-    private FixedNodeExtentProvider<NetworkNode> extentProvider = new FixedNodeExtentProvider<>(200, 100);
+    private Handler() {
+        logger.debug("Instantiate Handler");
+        if (HARDCODE_ROUTER_MAC) {
+            networkRoot = new NetworkNode("Router");
+            networkRoot.setApMac(ROUTER_MAC);
+            unknownApMacs.put(ROUTER_MAC, networkRoot);
+            routerIsFound = true;
+        }
+        initGraph();
+        visualizeGraph();
+    }
 
-    private static Handler instance;
     public static synchronized Handler getInstance() {
         if (Handler.instance == null) {
             Handler.instance = new Handler();
@@ -52,14 +63,8 @@ public class Handler {
         return Handler.instance;
     }
 
-    private Handler() {
-        logger.debug("Instantiate Handler");
-        initGraph();
-    }
-
-    // TODO: Check for disconnecting nodes
-
-    public void handleincomingTopologyMessage(TopologyMessage msg) {
+    public synchronized void handleincomingTopologyMessage(TopologyMessage msg) {
+        boolean topologyChanged = true;
         String nodeId = msg.getId();
         String apMac = msg.getAp_mac();
         String staMac = msg.getSta_mac();
@@ -68,22 +73,26 @@ public class Handler {
 
         // Check if Node is already known
         if (nodesById.containsKey(nodeId)) {
-            logger.debug("Node is known already");
+
             node = nodesById.get(nodeId);
-            // Remove node as Child of Uplink
-            NetworkNode oldUplink = node.getUplinkNode();
-            if (oldUplink!=null){
-                oldUplink.removeStationNode(node);
-                oldUplink.decreaseStations();
+            topologyChanged = node.handleMessage(msg);
+            if (topologyChanged) {
+                // Remove node as Child of Uplink
+                NetworkNode oldUplink = node.getUplinkNode();
+                if (oldUplink != null) {
+                    oldUplink.removeStationNode(node);
+
+                }
+
+                // Remove Node as Uplink of Children
+                for (NetworkNode staNode : node.getStaNodes()) {
+                    staNode.setUplinkNode(null);
+                    nodesById.remove(staNode.getId());
+                    unknownApMacs.put(staNode.getApMac(), staNode);
+                }
             }
 
-            // Remove Node as Uplink of Children
-            for (NetworkNode staNode : node.getStaNodes()) {
-                staNode.setUplinkNode(null);
-                nodesById.remove(staNode.getId());
-                unknownApMacs.put(staNode.getApMac(), staNode);
-            }
-            node.handleMessage(msg);
+            logger.debug("Node is known already, Topology has {}changed", topologyChanged ? "" : "not ");
         } else if (unknownStaMacs.containsKey(staMac)) {
             logger.debug("Node is known as Station already");
             node = unknownStaMacs.get(staMac);
@@ -104,16 +113,32 @@ public class Handler {
             nodesById.put(nodeId, node);
         }
 
-        updateAllNodesSet();
-        createLinksForNode(node);
-
-        nodesTableFrame.update(nodesById.values());
 
 
+        if (topologyChanged) {
+            createLinksForNode(node);
+            visualizeGraph();
+        } else {
+            // only update rssi
+            for (Edge edge : graph.getEdgeSet()) {
+                if (edge.getNode1().getId().equals(nodeId)) {
+                    edge.setAttribute("ui.label", node.getRssi() + " dBm");
+                }
+            }
 
-        if (networkRoot != null) {
+        }
+        //nodesTableFrame.update(nodesById.values());
+        mainFrame.pack();
+        if (node.getUplinkNode() == null){
+            logger.error("SOMETHING WENT WRONG, UPLINK IS NULL");
+        }
+
+        logger.debug("Handling Done\n");
+    }
+
+    protected void visualizeGraph() {
+        if (routerIsFound && networkRoot != null) {
             logger.debug("Create visualization");
-
 
 
             graph.getNodeSet().clear();
@@ -121,12 +146,9 @@ public class Handler {
 
             addNodesToGraph(networkRoot, getNodePositions());
             addEdgesToGraph(networkRoot);
-
-            findUnconnectedNodes();
         }
 
-        mainFrame.pack();
-        logger.debug("Handling Done");
+        findUnconnectedNodes();
     }
 
     private Map<NetworkNode, Rectangle2D.Double> getNodePositions() {
@@ -139,25 +161,24 @@ public class Handler {
     private void findUnconnectedNodes() {
         HashMap<String, NetworkNode> allNodesMap = getAllNodesMap();
         Iterator<Node> it = graph.getNodeIterator();
-        while(it.hasNext()){
+        while (it.hasNext()) {
             Node itNode = it.next();
             String id = itNode.getId();
-
             allNodesMap.remove(id);
-
         }
         mainFrame.updateUnconnectedNodes(allNodesMap.keySet());
+        logger.debug("Unconnected Nodes: {}", printCollection(allNodesMap.keySet()));
     }
 
-    private String printCollection(Collection<?> collection){
-        StringBuilder sb = new StringBuilder("Set: ");
+    private String printCollection(Collection<?> collection) {
+        StringBuilder sb = new StringBuilder();
         for (Object o : collection) {
             sb.append(o.toString()).append(",");
         }
         return sb.toString();
-    };
+    }
 
-    private void initGraph(){
+    private void initGraph() {
         // setup graph
         graph.setStrict(false);
         graph.setAttribute("ui.stylesheet", "url('file:" + new File("graphStyle.css").getAbsolutePath() + "')");
@@ -182,9 +203,8 @@ public class Handler {
     }
 
 
-    private void addNodesToGraph(NetworkNode node, Map<NetworkNode, Rectangle2D.Double> nodeBounds){
+    private void addNodesToGraph(NetworkNode node, Map<NetworkNode, Rectangle2D.Double> nodeBounds) {
         String id = node.getId();
-        //logger.debug("Add node {} to Graphstream", id);
         Rectangle2D.Double bounds = nodeBounds.get(node);
         Node newGraphNode = graph.addNode(id);
         double x = bounds.x;
@@ -192,23 +212,14 @@ public class Handler {
         logger.debug("Add node {} to Graphstream at ({},{})", id, x, y);
         newGraphNode.setAttribute("ui.label", id);
         newGraphNode.setAttribute("xyz", x, y, 0);
-        /*
-        Sprite s = spriteManager.addSprite(id);
-        s.attachToNode(id);
-        // TODO: Optimize Sprite Position
-        s.setPosition(50,0,0);
-        s.addAttribute("ui.label", "Sensor: n/a");
-        */
+
         // recursive call to all stas
         for (NetworkNode staNode : node.getStaNodes()) {
             addNodesToGraph(staNode, nodeBounds);
         }
-
-
-    };
+    }
 
     private void addEdgesToGraph(NetworkNode node) {
-
         for (NetworkNode staNode : node.getStaNodes()) {
             logger.debug("Add edge from {} to {} to Graphstream", node.getId(), staNode.getId());
             Edge edge = graph.addEdge(node.getId() + "->" + staNode.getId(), node.getId(), staNode.getId());
@@ -218,6 +229,10 @@ public class Handler {
     }
 
     protected NetworkNode getNodeWhere(String value, Function<NetworkNode, String> func) {
+        HashSet<NetworkNode> allNodes = new HashSet<>();
+        allNodes.addAll(nodesById.values());
+        allNodes.addAll(unknownApMacs.values());
+        allNodes.addAll(unknownStaMacs.values());
         for (NetworkNode other : allNodes) {
             if (func.apply(other).equals(value)) {
                 return other;
@@ -226,51 +241,41 @@ public class Handler {
         return null;
     }
 
-    private void updateAllNodesSet() {
-        allNodes.clear();
-
-        allNodes.addAll(nodesById.values());
-        allNodes.addAll(unknownApMacs.values());
-        allNodes.addAll(unknownStaMacs.values());
-
-        logger.debug("Merged all Nodes into {}", printCollection(allNodes));
-    }
-
     private HashMap<String, NetworkNode> getAllNodesMap() {
         HashMap<String, NetworkNode> allNodesMap = new HashMap<>(nodesById);
         unknownApMacs.values().forEach(node -> allNodesMap.put(node.getId(), node));
         unknownStaMacs.values().forEach(node -> allNodesMap.put(node.getId(), node));
 
-        logger.debug("Merged all Nodes, All Nodes: ");
-        logger.debug(printCollection(allNodesMap.values()));
 
         return allNodesMap;
     }
 
     private void createLinksForNode(NetworkNode node) {
-        logger.debug("Create Uplink Link");
+        logger.debug("Try to find Uplink");
 
         // Handle Uplink
         String uplinkBSSID = node.getUplink_bssid();
         NetworkNode myUplinkNode = getNodeWhere(uplinkBSSID, NetworkNode::getApMac);
 
-        if (myUplinkNode == null) {
+        // Uplink is either router without NetworkNode yet, or in some set, or unknown Node.
+        // All Nodes except Router have fixed MAC-Prefix
+        logger.info("Router {}found yet! Uplink Mac: {}; Mac-Prefix: {}", routerIsFound ? "" : "not ", uplinkBSSID, MAC_PREFIX);
+        if (!routerIsFound && !uplinkBSSID.substring(0, 5).equals(MAC_PREFIX)) {
+            logger.debug("My Uplink is Router");
+            networkRoot = new NetworkNode("Router");
+            nodesById.put(networkRoot.getId(), networkRoot);
+            routerIsFound = true;
+            myUplinkNode = networkRoot;
+            myUplinkNode.setApMac(uplinkBSSID);
+        } else if (myUplinkNode == null) {
             logger.debug("My Uplink is yet unknown, create new Node");
             // Uplink not found, create new Node as Uplink
             myUplinkNode = new NetworkNode();
             myUplinkNode.setApMac(uplinkBSSID);
-            if (uplinkBSSID.equals(ROUTER_MAC)){
-                logger.debug("My Uplink is Router");
-                networkRoot = myUplinkNode;
-                networkRoot.setId("Router");
-            }
             unknownApMacs.put(uplinkBSSID, myUplinkNode);
-        }else{
+        } else {
             logger.debug("Uplink was known already");
         }
-
-
-
         // Connect both Nodes
         node.setUplinkNode(myUplinkNode);
         myUplinkNode.addStationNode(node);
@@ -296,24 +301,9 @@ public class Handler {
 
     }
 
-    public void setNodesTableFrame(NodesTableFrame nodesTableFrame) {
-        this.nodesTableFrame = nodesTableFrame;
-    }
 
-    public  Graph getGraph() {
+    public Graph getGraph() {
         return graph;
-    }
-
-    public void setMainFrame(MainFrame mainFrame) {
-        this.mainFrame = mainFrame;
-    }
-
-    public MainFrame getMainFrame() {
-        return mainFrame;
-    }
-
-    public  HashMap<String, NetworkNode> getNodesById() {
-        return nodesById;
     }
 
     public Component getNodesTableFrame() {
@@ -322,5 +312,36 @@ public class Handler {
 
     public SpriteManager getSpriteManager() {
         return spriteManager;
+    }
+
+    public void nodeTimedOut(NetworkNode node) {
+        nodesById.remove(node.getId());
+        unknownApMacs.remove(node.getApMac());
+        unknownStaMacs.remove(node.getStaMac());
+        NetworkNode uplinkNode = node.getUplinkNode();
+        logger.debug(node.toString());
+        if (uplinkNode != null) {
+            uplinkNode.removeStationNode(node);
+        }
+        spriteManager.removeSprite(node.getId());
+        visualizeGraph();
+    }
+
+    public void handleWsnMessage(MqttMessage mqttMessage, String nodeId) {
+        if (graph.getNode(nodeId) != null) {
+            String value = new String(mqttMessage.getPayload());
+            Sprite s = spriteManager.getSprite(nodeId);
+
+            if (s == null) {
+                s = spriteManager.addSprite(nodeId);
+            }
+
+            s.attachToNode(nodeId);
+            s.setPosition(0.7, 0, 0);
+            s.setAttribute("ui.label", "Sensor: " + value);
+        }
+            //logger.warn("Node [{}] is not know yet", nodeId);
+
+
     }
 }

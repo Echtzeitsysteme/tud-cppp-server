@@ -7,7 +7,7 @@ node {
 	fill-color: green;
 	stroke-mode: plain;
 	stroke-color: black;
-	/*size-mode:fit;*/
+	size-mode:fit;
 	text-padding: 10px;
 	padding: 10px;
 	text-style: bold;

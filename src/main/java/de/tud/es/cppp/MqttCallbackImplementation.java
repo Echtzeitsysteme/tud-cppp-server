@@ -10,13 +10,16 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Date;
 
 public class MqttCallbackImplementation implements MqttCallback {
 
     private Logger logger = LogManager.getLogger(MqttCallbackImplementation.class.getSimpleName());
     private JSONParser parser = new JSONParser();
     private Handler handler = Handler.getInstance();
+
 
     public MqttCallbackImplementation() {
         logger.debug("Instantiate Callback");
@@ -28,23 +31,35 @@ public class MqttCallbackImplementation implements MqttCallback {
 
     @Override
     public void messageArrived(String topic, MqttMessage mqttMessage){
-        logger.debug("MQTT Message arrived on topic {}", topic);
-        logger.debug("Message: {}", new String(mqttMessage.getPayload()));
+
         try {
             String[] parts = topic.split("/");
-            String topicEnd = parts[3];
-            switch (topicEnd) {
-                case "Topology":
-                    String jsonString = new String(mqttMessage.getPayload());
-                    handleTopologyMessage(jsonString);
-                    break;
-                case "wsn":
-                    String nodeId = parts[2];
-                    handleWsnMessage(mqttMessage, nodeId);
-                    break;
-                case "Composed":
-                    handleComposedMessage(mqttMessage);
+            boolean b = parts.length > 2;
+            boolean isFromESP = b && parts[2].contains("ESP_");
+            boolean topicIsWiFi = parts[1].equals("WiFi");
+            boolean topicIsManualTesting = parts[1].equals("ManualTesting");
+            logger.debug("Message arrived! Topic: [{}], Message: [{}]", topic, new String(mqttMessage.getPayload()));
 
+            if (isFromESP && (topicIsWiFi || topicIsManualTesting)) {
+                String topicEnd = parts[3];
+                switch (topicEnd) {
+                    case "system":
+                        if(parts[4].equals("Topology")) {
+                            String jsonString = new String(mqttMessage.getPayload());
+                            handleTopologyMessage(jsonString);
+                        }
+                        break;
+                    case "wsn":
+                        String nodeId = parts[2];
+                        handler.handleWsnMessage(mqttMessage, nodeId);
+                        break;
+                    case "Composed":
+                        handleComposedMessage(mqttMessage);
+                        break;
+                }
+            }else{
+                String time = new SimpleDateFormat("HH:mm:ss").format(new Date());
+                MQTTLogFrame.getInstance().addMessage(time, topic, new String(mqttMessage.getPayload()));
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -80,18 +95,9 @@ public class MqttCallbackImplementation implements MqttCallback {
 
     }
 
-    private void handleWsnMessage(MqttMessage mqttMessage, String nodeId) {
-        String value = new String(mqttMessage.getPayload());
-        Sprite s = handler.getSpriteManager().getSprite(nodeId);
-        if (s != null){
-            s.setAttribute("ui.label", "Sensor: " + value);
-        }else{
-            logger.warn("Node is not know yet");
-        }
-    }
+
 
     private void handleTopologyMessage(String mqttMessagePayload){
-        logger.debug("BLA{}", mqttMessagePayload);
         try {
             JSONObject json = (JSONObject) parser.parse(mqttMessagePayload);
             TopologyMessage tm = new TopologyMessage(json);

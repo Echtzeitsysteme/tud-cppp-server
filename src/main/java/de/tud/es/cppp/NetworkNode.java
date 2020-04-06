@@ -4,52 +4,60 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.simple.JSONObject;
 
-import java.text.SimpleDateFormat;
-
-import java.util.Date;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 
 public class NetworkNode {
 
 
+    static String[] fieldTexts = {"UplinkNode:",
+            "Uplinks MAC:",
+            "RSSI to Uplink:",
+            "MAC:",
+            "IP:",
+            "Node ID:",
+            "meshLevel:",
+            "AP MAC:",
+            "AP IP:",
+            "#Stations:",
+            "stations:"
+    };
+    private static int idNo = 1;
     private Logger logger = LogManager.getLogger(NetworkNode.class.getSimpleName());
-
     private NetworkNode uplinkNode;
     private HashSet<NetworkNode> staNodes = new HashSet<>();
-
-    private String id, apIp, apMac, uplink_bssid, staMac, staIp, meshLevel, rssi, sensorValue = "";
+    private String id;
+    private String apIp;
+    private String apMac;
+    private String uplink_bssid;
+    private String staMac;
+    private String staIp;
+    private String meshLevel;
+    private String rssi;
     private int noStas;
-
     private TopologyMessage.Station[] stations;
-    private JSONObject jsonObject;
-
-    public Date getTimestamp() {
-        return timestamp;
-    }
-
-    private Date timestamp;
+    private TopologyMessage oldMsg;
+    private Timer timer;
 
     public NetworkNode() {
-        this.id = String.valueOf(hashCode());
+        this.id = "UnknownNode_" + idNo++;
+        timer = new Timer(this);
+        timer.start();
     }
-
 
     public NetworkNode(String id) {
         this.id = id;
+        timer = new Timer(this);
+        //timer.start();
     }
 
-    public NetworkNode(TopologyMessage msg) {
-        timestamp = new Date();
-        getParamsFromMessage(msg);
-    }
 
-    public void setStationNodes(HashSet<NetworkNode> stations) {
-        this.staNodes = stations;
-    }
-
-    public void setSensorValue(String sensorValue) {
-        this.sensorValue = sensorValue;
+    public NetworkNode(TopologyMessage newMsg) {
+        this.id = newMsg.getId();
+        timer = new Timer(this);
+        timer.start();
+        handleMessage(newMsg);
     }
 
     private String checkIfSet(String s) {
@@ -65,10 +73,6 @@ public class NetworkNode {
         return (id == null) ? "NoID_" + Integer.toHexString(this.hashCode()) : id;
     }
 
-    public void setId(String id) {
-        this.id = id;
-    }
-
     public NetworkNode getUplinkNode() {
         return uplinkNode;
     }
@@ -79,14 +83,6 @@ public class NetworkNode {
 
     public HashSet<NetworkNode> getStaNodes() {
         return staNodes;
-    }
-
-    public String getMeshLevel() {
-        return meshLevel;
-    }
-
-    public String getApIp() {
-        return apIp;
     }
 
     public String getApMac() {
@@ -101,10 +97,6 @@ public class NetworkNode {
         return checkIfSet(uplink_bssid);
     }
 
-    public int getNoStas() {
-        return noStas;
-    }
-
     public String getRssi() {
         return rssi;
     }
@@ -117,72 +109,56 @@ public class NetworkNode {
         this.staMac = staMac;
     }
 
-    public String getStaIp() {
-        return staIp;
-    }
-
     public TopologyMessage.Station[] getStations() {
         return stations;
     }
 
-    public JSONObject getJsonObject() {
-        return jsonObject;
-    }
+    public boolean handleMessage(TopologyMessage newMsg) {
+        boolean topologyChanged = true;
+        if (oldMsg != null) {
+             topologyChanged = topologyChanged(newMsg);
+        }
 
-    public void handleMessage(TopologyMessage newMsg) {
         // reset all info
-        uplinkNode = null;
-
-        staNodes.clear();
+        if (topologyChanged) {
+            uplinkNode = null;
+            staNodes.clear();
+        }
 
         getParamsFromMessage(newMsg);
+
+        // update Node
+        oldMsg = newMsg;
+        timer.updateLastMsgReceived();
+
+        return topologyChanged;
+    }
+
+    private boolean topologyChanged(TopologyMessage newMsg) {
+
+        boolean topologyUnchanged = oldMsg.isTopologyUnchanged(newMsg);
+        boolean topologyChanged = !topologyUnchanged;
+
+        if (topologyChanged){
+            logger.debug("OldMsg: {}", oldMsg.toString());
+            logger.debug("NewMsg: {}", newMsg.toString());
+        }
+        return topologyChanged;
     }
 
     private void getParamsFromMessage(TopologyMessage msg) {
         this.id = msg.getId();
         this.apMac = msg.getAp_mac();
         this.apIp = msg.getAp_ip();
-
         this.staMac = msg.getSta_mac();
         this.staIp = msg.getSta_ip();
-        this.uplink_bssid = msg.getUplink_bssid();
-
-        this.meshLevel = msg.getMesh_level();
-        this.noStas = msg.getNo_stas();
         this.rssi = msg.getRssi();
+
+        this.noStas = msg.getNo_stas();
+        this.uplink_bssid = msg.getUplink_bssid();
+        this.meshLevel = msg.getMesh_level();
         this.stations = msg.getStations();
-
-        this.timestamp = msg.getTimestamp();
-        this.jsonObject = msg.getJsonObject();
     }
-
-    public String printNeighbors() {
-        return "NetworkNode{" +
-                "id='" + id + '\'' +
-                ", uplinkNode=" + uplinkNode +
-                ", staNodes=" + staNodes +
-                '}';
-    }
-
-    @Override
-    public String toString() {
-        return id;
-    }
-
-    static String[] fieldTexts = {"UplinkNode:",
-            "Uplinks MAC:",
-            "RSSI to Uplink:",
-            "MAC:",
-            "IP:",
-            "Node ID:",
-            "meshLevel:",
-            "AP MAC:",
-            "AP IP:",
-            "#Stations:",
-            "stations:",
-            "Info Time:",
-            "Sensor Value:"
-    };
 
     public HashMap<String, String> getInfoMap() {
         HashMap<String, String> NameValueMap = new HashMap<>();
@@ -198,12 +174,11 @@ public class NetworkNode {
                     apMac,
                     "n/a",
                     "n/a",
-                    "n/a",
-                    "n/a",
                     "n/a"};
         } else {
 
             String uplinkNodeId = uplinkNode == null ? "null" : uplinkNode.getId();
+
             values = new String[]{uplinkNodeId,
                     uplink_bssid,
                     String.valueOf(rssi),
@@ -214,9 +189,7 @@ public class NetworkNode {
                     apMac,
                     apIp,
                     String.valueOf(noStas),
-                    stationsAsString(),
-                    sdf.format(timestamp),
-                    sensorValue};
+                    stationsAsString()};
         }
         for (int i = 0; i < values.length; i++) {
             NameValueMap.put(fieldTexts[i], values[i]);
@@ -234,24 +207,68 @@ public class NetworkNode {
         return sb.toString();
     }
 
-
-    private SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss");
-
-    public String getNodeInfo() {
-        return staIp + " | " + staMac + '\n' +
-                "---\n" +
-                id + '\n' +
-                "---\n" +
-                apIp + " | " + apMac + '\n';
-    }
-
-    public void removeStationNode(NetworkNode node) {
-        logger.debug("STAS BEFORE: {}", staNodes);
-        staNodes.removeIf(nodeInSet -> nodeInSet.getId().equals(node.getId()));
-        logger.debug("STAS AFTER: {}", staNodes);
-    }
-
-    public void decreaseStations() {
+    public void removeStationNode(NetworkNode station) {
+        logger.debug("This is Node {}. Remove {} from {}", id, station.getId(), staNodes);
+        staNodes.removeIf(nodeInSet -> nodeInSet.getId().equals(station.getId()));
         noStas--;
+        logger.debug("After Removal: {}", staNodes);
+
+    }
+
+    private class Timer extends Thread {
+        long lastMsgReceived;
+        NetworkNode myNode;
+        private volatile boolean interrupted = false;
+
+        public Timer(NetworkNode node) {
+            logger.debug("Timer created for node [{}]", id);
+            this.lastMsgReceived = System.currentTimeMillis();
+            this.myNode = node;
+        }
+
+        public void updateLastMsgReceived() {
+            this.lastMsgReceived = System.currentTimeMillis();
+        }
+
+        @Override
+        public void run() {
+            while (!Thread.interrupted() && !interrupted) {
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                long now = System.currentTimeMillis();
+                long timediff = now - lastMsgReceived;
+                //logger.debug("Node [{}]; Timediff: [{}]", id, timediff);
+                if (timediff > 10000) {
+                    logger.warn("Node [{}] Timed Out", id);
+                    Handler.getInstance().nodeTimedOut(myNode);
+                    interrupted = true;
+                }
+            }
+
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "NetworkNode{" +
+                //"logger=" + logger +
+                ", uplinkNode=" + uplinkNode.getId() +
+                //", staNodes=" + staNodes +
+                ", id='" + id + '\'' +
+                ", apIp='" + apIp + '\'' +
+                ", apMac='" + apMac + '\'' +
+                ", uplink_bssid='" + uplink_bssid + '\'' +
+                ", staMac='" + staMac + '\'' +
+                ", staIp='" + staIp + '\'' +
+                ", meshLevel='" + meshLevel + '\'' +
+                ", rssi='" + rssi + '\'' +
+                ", noStas=" + noStas +
+                //", stations=" + Arrays.toString(stations) +
+                ", oldMsg=" + oldMsg +
+                //", timer=" + timer +
+                '}';
     }
 }

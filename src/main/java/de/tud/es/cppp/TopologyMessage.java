@@ -5,13 +5,12 @@ import org.apache.logging.log4j.Logger;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import java.util.Arrays;
 import java.util.Date;
 
 public class TopologyMessage{
     private String id, ap_mac, sta_mac, uplink_bssid, ap_ip, sta_ip, rssi, mesh_level;
     private int no_stas;
-    private JSONObject jsonObject;
-    private Date timestamp;
     Station[] stations;
 
     private static Logger logger = LogManager.getLogger(TopologyMessage.class.getSimpleName());
@@ -43,17 +42,11 @@ public class TopologyMessage{
     public int getNo_stas() {
         return no_stas;
     }
-    public JSONObject getJsonObject() {
-        return jsonObject;
-    }
 
     public Station[] getStations() {
         return stations;
     }
 
-    public Date getTimestamp() {
-        return timestamp;
-    }
 
     class Station {
         private String mac;
@@ -75,11 +68,7 @@ public class TopologyMessage{
     }
 
     public TopologyMessage(JSONObject json) {
-
-        timestamp = new Date();
-        this.jsonObject = json;
-
-        logger.debug("Instantiate new Message");
+        //logger.debug("Instantiate new Message");
         /*
          Message is
           JSONObj
@@ -120,5 +109,55 @@ public class TopologyMessage{
             return "Not Defined";
         } else
             return (String) o;
+    }
+
+
+    public boolean isTopologyUnchanged(Object o) {
+        if (this == o){
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        TopologyMessage that = (TopologyMessage) o;
+
+        if (no_stas != that.no_stas){
+            return false;
+        }
+        if (!uplink_bssid.equals(that.uplink_bssid)){
+            return false;
+        }
+        if (!mesh_level.equals(that.mesh_level)){
+            return false;
+        }
+
+        // Probably incorrect - comparing Object[] arrays with Arrays.equals
+        return true;//Arrays.equals(stations, that.stations);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = uplink_bssid.hashCode();
+        result = 31 * result + mesh_level.hashCode();
+        result = 31 * result + no_stas;
+        result = 31 * result + Arrays.hashCode(stations);
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "TopologyMessage{" +
+                "id='" + id + '\'' +
+                ", ap_mac='" + ap_mac + '\'' +
+                ", sta_mac='" + sta_mac + '\'' +
+                ", uplink_bssid='" + uplink_bssid + '\'' +
+                ", ap_ip='" + ap_ip + '\'' +
+                ", sta_ip='" + sta_ip + '\'' +
+                ", rssi='" + rssi + '\'' +
+                ", mesh_level='" + mesh_level + '\'' +
+                ", no_stas=" + no_stas +
+                ", stations=" + Arrays.toString(stations) +
+                '}';
     }
 }

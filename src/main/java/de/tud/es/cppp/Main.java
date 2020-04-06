@@ -8,8 +8,9 @@ import org.eclipse.paho.client.mqttv3.*;
 public class Main {
     private static Logger logger;
 
-    private static final String TOPIC = "/ManualTesting/#";
-    //private static final String TOPIC = "/Wifii/#";
+    private static final String TOPIC = "#";
+    //private static final String TOPIC = "/ManualTesting/#";
+    //private static final String TOPIC = "/Wifi/#";
 
     // Default Topic format is: "/Wifi/<ESP_ID>/subtopic", where subtopic is "Wsn" or "Topology"
     //private static final String TOPIC = "WiFi/#";
@@ -24,7 +25,6 @@ public class Main {
         logger = LogManager.getLogger(Main.class.getSimpleName());
 
         Handler.getInstance();
-        StyleConsoleFrame.getInstance();
         MainFrame.getInstance();
         try {
             MqttClient client = new MqttClient(BROKER, CLIENT_ID);
